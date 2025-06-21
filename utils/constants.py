@@ -1,0 +1,1 @@
+NODE_INDEX="rtx_kg2_nodes"
