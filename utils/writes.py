@@ -7,7 +7,7 @@ def write_to_temp(batch_id: int, edges: list[str]):
     """
     Write serialized edges to a temporary file.
     """
-    with open(f"{TEMP_DIR}/{batch_id}.tmp.jsonl", "w") as f:
+    with open(f"{TEMP_DIR}/{batch_id:05d}.tmp.jsonl", "w") as f:
         f.write("\n".join(edges) + '\n')
 
 def stitch_temps():
