@@ -27,6 +27,10 @@ def get_nodes_details(client: Elasticsearch, ids: list[str]):
         return '_source' in doc and doc['_source'] is not None
 
 
+    def filter_invalid_doc(doc):
+        return not doc['found']
+
+
     # we generate a dict like {"NCBITaxon:2051579" : {...}} for fast accessing
     details = dict(
         map(
