@@ -4,6 +4,7 @@ from dask import delayed
 from dask.distributed import Client, get_worker, LocalCluster
 from elasticsearch import Elasticsearch
 
+from utils.constants import N_WORKERS, THREADS_PER_WORKER
 from utils.edges import process_edges
 from utils.writes import write_to_temp
 
@@ -19,7 +20,9 @@ def delayed_task(es_url: str, target_file: str, index: int, start: int, end: Opt
 
 
 def distribute_tasks(*, es_url: str, target_file:str, offsets: list[int]):
-    cluster = LocalCluster(n_workers=8, threads_per_worker=1)
+    print(f"starting {N_WORKERS} workers with {THREADS_PER_WORKER}-thread each")
+
+    cluster = LocalCluster(n_workers=N_WORKERS, threads_per_worker=THREADS_PER_WORKER)
     client = Client(cluster)
 
     tasks = []
