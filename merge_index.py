@@ -1,15 +1,13 @@
-import json
 import os
 import subprocess
-from functools import reduce
-from typing import Optional
 
 from elasticsearch import Elasticsearch
 
-from utils.edges import load_edges, process_edges
+from utils.benchmark import timeit
+from utils.edges import process_edges
 from utils.make_offsets import get_offsets
-from utils.nodes import get_nodes_details
-from utils.writes import write_to_temp, stitch_temps
+from utils.parallel import distribute_tasks
+from utils.writes import write_to_temp
 
 # 1. read in edges or query (scroll) end point
 # 2. per 1000, call node endpoint to get more info
@@ -21,9 +19,7 @@ from utils.writes import write_to_temp, stitch_temps
 SERVER = "localhost"
 PORT = 9200
 ES_URL = "http://%s:%d" % (SERVER, PORT)
-EDGE_FILE = "edges_sample.jsonl"
-
-
+EDGE_FILE = "edges_100k.jsonl"
 
 
 def main():
@@ -31,13 +27,29 @@ def main():
     offsets = get_offsets(EDGE_FILE)
     es_client = Elasticsearch(ES_URL)
 
-    for start_index, start in enumerate(offsets):
-        updated_edges = process_edges(es_client, EDGE_FILE, start, offsets[start_index + 1] if start_index + 1 < len(offsets) else None)
-        write_to_temp(start_index, updated_edges)
+    '''
+    Consecutive run
+    '''
+
+    with timeit('consecutive tasks'):
+        for start_index, start in enumerate(offsets):
+            updated_edges = process_edges(es_client, EDGE_FILE, start, offsets[start_index + 1] if start_index + 1 < len(offsets) else None)
+            write_to_temp(start_index, updated_edges)
+
+        subprocess.run(["./merge_temps.sh"], check=True)
+
+
+
+    '''
+    Distributed/parallel run
+    '''
+    with timeit('distributed tasks'):
+        distribute_tasks(es_url=ES_URL, target_file=EDGE_FILE, offsets=offsets)
+        subprocess.run(["./merge_temps.sh"], check=True)
 
     # write final output file
     # stitch_temps()
-    subprocess.run(["./merge_temps.sh"], check=True)
+
 
 
 
