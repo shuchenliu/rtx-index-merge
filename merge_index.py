@@ -7,7 +7,7 @@ from typing import Optional
 from elasticsearch import Elasticsearch
 
 from utils.edges import load_edges
-from utils.make_offsets import make_offsets
+from utils.make_offsets import get_offsets
 from utils.nodes import get_nodes_details
 from utils.writes import write_to_temp, stitch_temps
 
@@ -63,7 +63,7 @@ def process_edges(start: int, end: Optional[int]) -> list[str]:
 
 def main():
     os.makedirs("temp_output", exist_ok=True)
-    offsets = make_offsets(EDGE_FILE)
+    offsets = get_offsets(EDGE_FILE)
 
     for start_index, start in enumerate(offsets):
         updated_edges = process_edges(start, offsets[start_index + 1] if start_index + 1 < len(offsets) else None)
