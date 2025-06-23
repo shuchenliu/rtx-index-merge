@@ -71,7 +71,7 @@ def main():
 
     # write final output file
     # stitch_temps()
-    subprocess.run(["./merge_temps.sh.sh"], check=True)
+    subprocess.run(["./merge_temps.sh"], check=True)
 
 
 
