@@ -1,0 +1,14 @@
+services:
+  app:
+    build: .
+    container_name: merge_index_rtx
+    environment:
+      - PROD=true
+      - IN_DOCKER=true
+    volumes:
+      - .:/app
+      - ${PWD}/../:/mnt/input:ro
+      - ${PWD}/../output:/mnt/output
+    command: tail -f /dev/null
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

@@ -5,6 +5,7 @@ import subprocess
 from dotenv import load_dotenv
 
 from utils.benchmark import timeit
+from utils.constants import TEMP_DIR
 from utils.make_offsets import get_offsets
 from utils.parallel import distribute_tasks
 
@@ -22,6 +23,9 @@ def load_env():
         return
 
     load_dotenv('.env.dev')
+    is_in_docker = os.getenv("IN_DOCKER") == "true"
+    if is_in_docker:
+        os.environ["SERVER"] = "host.docker.internal"
 
 
 def main():
@@ -31,12 +35,13 @@ def main():
     SERVER = os.getenv("SERVER")
     PORT = os.getenv("PORT")
     EDGE_FILE = os.getenv("EDGE_FILE")
+    OUTPUT_DIR = os.getenv("OUTPUT_DIR")
 
     ES_URL = "http://%s:%s" % (SERVER, PORT)
 
 
-    os.makedirs("temp_output", exist_ok=True)
-    os.makedirs("output", exist_ok=True)
+    os.makedirs(TEMP_DIR, exist_ok=True)
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     print ("Indexing offsets")
     offsets = get_offsets(EDGE_FILE)
@@ -62,7 +67,7 @@ def main():
         distribute_tasks(es_url=ES_URL, target_file=EDGE_FILE, offsets=offsets)
         # write final output file
         # stitch_temps()
-        subprocess.run(["./merge_temps.sh"], check=True)
+        subprocess.run(["./merge_temps.sh", OUTPUT_DIR], check=True)
 
     # remove temp files
     shutil.rmtree('./temp_output')
