@@ -9,11 +9,11 @@ from utils.constants import TEMP_DIR
 from utils.make_offsets import get_offsets
 from utils.parallel import distribute_tasks
 
-# 1. read in edges or query (scroll) end point
-# 2. per 1000, call node endpoint to get more info
-# 3. merge and save
+# 1. read in edges, indexing starting location for 10k batches
+# 2. for each batch, extract sub and obj id and call ES for details
+# 3. write updated edges to tem files
+# 4. merge updated edges
 
-# maybe use Dask
 
 
 def load_env():
