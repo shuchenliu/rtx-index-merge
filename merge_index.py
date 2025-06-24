@@ -1,3 +1,4 @@
+import argparse
 import os
 import shutil
 import subprocess
@@ -5,7 +6,7 @@ import subprocess
 from dotenv import load_dotenv
 
 from utils.benchmark import timeit
-from utils.constants import TEMP_DIR
+from utils.constants import TEMP_DIR, BATCH_SIZE
 from utils.make_offsets import get_offsets
 from utils.parallel import distribute_tasks
 
@@ -39,14 +40,26 @@ def main():
 
     ES_URL = "http://%s:%s" % (SERVER, PORT)
 
+    # overwrite edge file if specified
+    parser = argparse.ArgumentParser()
+    parser.add_argument("filepath", nargs="?", default=EDGE_FILE, help="Path to the input file")
+    args = parser.parse_args()
+
+    edge_file_path = args.filepath
+
+    print(edge_file_path)
 
     os.makedirs(TEMP_DIR, exist_ok=True)
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     print ("Indexing offsets")
-    offsets = get_offsets(EDGE_FILE)
-    print("Offsets indexed:", len(offsets) , "start locations")
+    offsets = get_offsets(edge_file_path, BATCH_SIZE)
+    print("Offsets indexed:", len(offsets), "start locations")
 
+
+    # set worker number as needed
+    if len(offsets) < 10:
+        os.environ["N_WORKERS"] = str(len(offsets))
 
     '''
     Consecutive run
@@ -54,7 +67,7 @@ def main():
     # es_client = Elasticsearch(ES_URL)
     # with timeit('consecutive tasks'):
     #     for start_index, start in enumerate(offsets):
-    #         updated_edges = process_edges(es_client, EDGE_FILE, start, offsets[start_index + 1] if start_index + 1 < len(offsets) else None)
+    #         updated_edges = process_edges(es_client, edge_file_path, start, offsets[start_index + 1] if start_index + 1 < len(offsets) else None)
     #         write_to_temp(start_index, updated_edges)
     #
     #     subprocess.run(["./merge_temps.sh"], check=True)
@@ -64,7 +77,7 @@ def main():
     Distributed/parallel run
     '''
     with timeit('distributed tasks'):
-        distribute_tasks(es_url=ES_URL, target_file=EDGE_FILE, offsets=offsets)
+        distribute_tasks(es_url=ES_URL, target_file=edge_file_path, offsets=offsets)
         # write final output file
         # stitch_temps()
         subprocess.run(["./merge_temps.sh", OUTPUT_DIR], check=True)
