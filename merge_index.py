@@ -9,6 +9,8 @@ from utils.benchmark import timeit
 from utils.constants import TEMP_DIR, BATCH_SIZE
 from utils.make_offsets import get_offsets
 from utils.parallel import distribute_tasks
+from utils.writes import stitch_temps
+
 
 # 1. read in edges, indexing starting location for 10k batches
 # 2. for each batch, extract sub and obj id and call ES for details
@@ -79,8 +81,8 @@ def main():
     with timeit('distributed tasks'):
         distribute_tasks(es_url=ES_URL, target_file=edge_file_path, offsets=offsets)
         # write final output file
-        # stitch_temps()
-        subprocess.run(["./merge_temps.sh", OUTPUT_DIR], check=True)
+        stitch_temps(OUTPUT_DIR)
+        # subprocess.run(["./merge_temps.sh", OUTPUT_DIR], check=True)
 
     # remove temp files
     shutil.rmtree('./temp_output')
