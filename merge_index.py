@@ -2,13 +2,9 @@ import os
 import shutil
 import subprocess
 
-from elasticsearch import Elasticsearch
-
 from utils.benchmark import timeit
-from utils.edges import process_edges
 from utils.make_offsets import get_offsets
 from utils.parallel import distribute_tasks
-from utils.writes import write_to_temp
 
 # 1. read in edges or query (scroll) end point
 # 2. per 1000, call node endpoint to get more info
