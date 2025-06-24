@@ -17,8 +17,11 @@ def delayed_task(es_url: str, target_file: str, index: int, start: int, end: Opt
 
     updated_edges = process_edges(worker.es_client, target_file, start,                                  end)
     write_to_temp(index, updated_edges)
+    n_edges_processed = len(updated_edges)
 
-    return len(updated_edges)
+    del updated_edges
+
+    return n_edges_processed
 
 def distribute_tasks(*, es_url: str, target_file:str, offsets: list[int]):
     print(f"starting {N_WORKERS} workers with {THREADS_PER_WORKER}-thread each")
@@ -39,5 +42,6 @@ def distribute_tasks(*, es_url: str, target_file:str, offsets: list[int]):
         total_lines_processed += lines_processed
         print(f"Total lines processed: {total_lines_processed}", end='\r', flush=True)
 
+    client.close()
 
     # client.gather(futures)
