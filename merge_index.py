@@ -24,20 +24,22 @@ EDGE_FILE = "edges_100k.jsonl"
 
 def main():
     os.makedirs("temp_output", exist_ok=True)
+
+    print ("Indexing offsets")
     offsets = get_offsets(EDGE_FILE)
-    es_client = Elasticsearch(ES_URL)
+    print("Offsets indexed:", len(offsets) , "start locations")
+
 
     '''
     Consecutive run
     '''
-
-    with timeit('consecutive tasks'):
-        for start_index, start in enumerate(offsets):
-            updated_edges = process_edges(es_client, EDGE_FILE, start, offsets[start_index + 1] if start_index + 1 < len(offsets) else None)
-            write_to_temp(start_index, updated_edges)
-
-        subprocess.run(["./merge_temps.sh"], check=True)
-
+    # es_client = Elasticsearch(ES_URL)
+    # with timeit('consecutive tasks'):
+    #     for start_index, start in enumerate(offsets):
+    #         updated_edges = process_edges(es_client, EDGE_FILE, start, offsets[start_index + 1] if start_index + 1 < len(offsets) else None)
+    #         write_to_temp(start_index, updated_edges)
+    #
+    #     subprocess.run(["./merge_temps.sh"], check=True)
 
 
     '''

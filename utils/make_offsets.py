@@ -20,6 +20,8 @@ def make_offsets(target_file:str, batch_size:int):
             offset += len(line)
             line_count += 1
 
+    print("total lines", line_count)
+
     return offsets
 
 def get_offsets(target_file:str, batch_size=10000, force=False) -> list[int]:
