@@ -2,6 +2,8 @@ import os
 import shutil
 import subprocess
 
+from dotenv import load_dotenv
+
 from utils.benchmark import timeit
 from utils.make_offsets import get_offsets
 from utils.parallel import distribute_tasks
@@ -13,13 +15,26 @@ from utils.parallel import distribute_tasks
 # maybe use Dask
 
 
-SERVER = "localhost"
-PORT = 9200
-ES_URL = "http://%s:%d" % (SERVER, PORT)
-EDGE_FILE = "edges_100k.jsonl"
+def load_env():
+    is_prod = os.getenv("PROD") == "true"
+    if is_prod:
+        load_dotenv('.env.prod')
+        return
+
+    load_dotenv('.env.dev')
 
 
 def main():
+
+    # load envs
+    load_env()
+    SERVER = os.getenv("SERVER")
+    PORT = os.getenv("PORT")
+    EDGE_FILE = os.getenv("EDGE_FILE")
+
+    ES_URL = "http://%s:%s" % (SERVER, PORT)
+
+
     os.makedirs("temp_output", exist_ok=True)
     os.makedirs("output", exist_ok=True)
 
