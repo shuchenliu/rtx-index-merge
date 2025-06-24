@@ -1,4 +1,5 @@
 import os
+import shutil
 import subprocess
 
 from elasticsearch import Elasticsearch
@@ -24,6 +25,7 @@ EDGE_FILE = "edges_100k.jsonl"
 
 def main():
     os.makedirs("temp_output", exist_ok=True)
+    os.makedirs("output", exist_ok=True)
 
     print ("Indexing offsets")
     offsets = get_offsets(EDGE_FILE)
@@ -47,10 +49,12 @@ def main():
     '''
     with timeit('distributed tasks'):
         distribute_tasks(es_url=ES_URL, target_file=EDGE_FILE, offsets=offsets)
+        # write final output file
+        # stitch_temps()
         subprocess.run(["./merge_temps.sh"], check=True)
 
-    # write final output file
-    # stitch_temps()
+    # remove temp files
+    shutil.rmtree('./temp_output')
 
 
 
