@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 
 from utils.benchmark import timeit
 from utils.constants import TEMP_DIR, BATCH_SIZE
+from utils.edges import refresh_es_index
 from utils.make_offsets import get_offsets
 from utils.parallel import distribute_tasks
 from utils.writes import stitch_temps
@@ -61,6 +62,11 @@ def main():
     print ("Indexing offsets")
     offsets = get_offsets(edge_file_path, BATCH_SIZE)
     print("Offsets indexed:", len(offsets), "start locations")
+
+
+
+    # make sure we have a clean slate
+    refresh_es_index(ES_URL)
 
 
     # set worker number as needed

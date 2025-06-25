@@ -7,6 +7,26 @@ from elasticsearch import Elasticsearch, helpers
 from utils.nodes import get_nodes_details
 
 
+def refresh_es_index(es_url: str):
+    es_client = Elasticsearch(es_url)
+    INDEX_NAME = os.environ.get("INDEX_NAME")
+
+    index_settings = {
+        "settings": {
+        "number_of_shards": 5,
+        "number_of_replicas": 0,
+        "codec": "best_compression"
+      }
+    }
+
+    # refresh index
+    if es_client.indices.exists(index=INDEX_NAME):
+        es_client.indices.delete(index=INDEX_NAME)
+
+    es_client.indices.create(index=INDEX_NAME, body=index_settings)
+
+
+
 def load_edges(target_file:str, start: int, end:Optional[int]) -> list:
     """
     Loads edges from file given start and ending byte locations.
