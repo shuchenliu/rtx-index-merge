@@ -4,6 +4,8 @@ from functools import reduce
 from typing import Optional
 
 from elasticsearch import Elasticsearch, helpers
+from elasticsearch.helpers import BulkIndexError
+
 from utils.nodes import get_nodes_details
 
 
@@ -91,4 +93,7 @@ def process_edges(es_client: Elasticsearch, target_file:str, start: int, end: Op
 
 
 def insert_docs_to_index(es_client: Elasticsearch, operations: list):
-    helpers.bulk(es_client, operations, chunk_size=5000, request_timeout=240)
+    try:
+        helpers.bulk(es_client, operations, chunk_size=5000, request_timeout=240)
+    except BulkIndexError as e:
+        print(e.errors)
