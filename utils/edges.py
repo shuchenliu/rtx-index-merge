@@ -91,4 +91,4 @@ def process_edges(es_client: Elasticsearch, target_file:str, start: int, end: Op
 
 
 def insert_docs_to_index(es_client: Elasticsearch, operations: list):
-    helpers.bulk(es_client, operations, chunk_size=5000)
+    helpers.bulk(es_client, operations, chunk_size=5000, request_timeout=240)
