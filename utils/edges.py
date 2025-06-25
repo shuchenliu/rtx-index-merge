@@ -96,4 +96,7 @@ def insert_docs_to_index(es_client: Elasticsearch, operations: list):
     try:
         helpers.bulk(es_client, operations, chunk_size=5000, request_timeout=240)
     except BulkIndexError as e:
-        print(e.errors)
+        for i, error in enumerate(e.errors[:1]):  # Only show first
+            doc_id = error["index"].get("_id", "N/A")
+            reason = error["index"]["error"].get("reason", "Unknown")
+            print(f"[{i}] ID={doc_id} → {reason}")
