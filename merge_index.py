@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 from utils.benchmark import timeit
 from utils.constants import TEMP_DIR, BATCH_SIZE
-from utils.edges import refresh_es_index
+from utils.es import refresh_es_index
 from utils.make_offsets import get_offsets
 from utils.parallel import distribute_tasks
 from utils.writes import stitch_temps
