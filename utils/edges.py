@@ -7,6 +7,7 @@ from elasticsearch import Elasticsearch, helpers
 from elasticsearch.helpers import BulkIndexError
 
 from utils.constants import NODE_INDEX, EDGE_INDEX
+from utils.es import get_es_docs_using_ids
 from utils.nodes import get_nodes_details
 
 
@@ -59,15 +60,19 @@ def reindex_edges(es_client: Elasticsearch, dest_index_name: str):
     }
     es_client.reindex(body=reindex_body)
 
-def load_edges(target_file:str, start: int, end:Optional[int]) -> list:
+def load_edge_ids(target_file:str, start: int, end:Optional[int]) -> list[str]:
     """
     Loads edges from file given start and ending byte locations.
 
     :param target_file: str, location of edges json file
     :param start: int, byte location for start of block
     :param end: int, byte location for end of block
-    :return: a list loaded edges
+    :return: a list of ids of loaded edges
     """
+    def id_loader(line: bytes):
+        data = json.loads(line)
+        return data["id"]
+
     with open(target_file, "rb") as f:
         f.seek(start)
         if end is None:
@@ -76,13 +81,21 @@ def load_edges(target_file:str, start: int, end:Optional[int]) -> list:
             block = f.read(end - start)
 
         lines = block.splitlines()
-        loaded = list(map(json.loads, lines))
+        # loaded = list(map(json.loads, lines))
 
-        return loaded
+        loaded_ids = list(set(map(id_loader, lines)))
+
+
+        return loaded_ids
+
+def load_edges(es_client: Elasticsearch, target_file: str, start: int, end: Optional[int]) -> list:
+    loaded_edge_ids = load_edge_ids(target_file, start, end)
+    return get_es_docs_using_ids(es_client, EDGE_INDEX, loaded_edge_ids)
+
 
 
 def process_edges(es_client: Elasticsearch, target_file:str, start: int, end: Optional[int]) -> int:
-    loaded = load_edges(target_file, start, end)
+    loaded = load_edges(es_client, target_file, start, end)
     # 0. get `subject` and `object`
     def ids_getter(id_set: set, edge: dict):
         if "subject" in edge:
@@ -92,18 +105,18 @@ def process_edges(es_client: Elasticsearch, target_file:str, start: int, end: Op
 
         return id_set
 
-    ids = reduce(ids_getter, loaded, set()) # functional programming
+    node_ids = reduce(ids_getter, loaded, set()) # functional programming
 
 
     # 1. use es to get details
-    details = get_nodes_details(es_client, list(ids))
+    node_details = get_nodes_details(es_client, list(node_ids))
 
     # 2. update edges and write back to file
     for index, edge in enumerate(loaded):
         if "subject" in edge:
-            edge["subject"] = details[edge["subject"]]
+            edge["subject"] = node_details[edge["subject"]]
         if "object" in edge:
-            edge["object"] = details[edge["object"]]
+            edge["object"] = node_details[edge["object"]]
 
         # loaded[index] = json.dumps(edge)
 

@@ -1,8 +1,9 @@
 from elasticsearch import Elasticsearch
 from utils.constants import NODE_INDEX
+from utils.es import get_es_docs_using_ids
 
 
-def get_nodes_details(client: Elasticsearch, ids: list[str]):
+def get_nodes_details(client: Elasticsearch, ids: list[str]) -> dict:
     """
     Get source details for given list of ids of nodes
 
@@ -10,33 +11,7 @@ def get_nodes_details(client: Elasticsearch, ids: list[str]):
     :param ids: a list of ids of nodes
     :return: dict, where keys are node ids and values are node details
     """
-
-
-    res = client.mget(index=NODE_INDEX, ids=ids)
-    docs = res['docs']
-
-    def get_sources(node_doc):
-        """
-        Generate k-v pairs for id, source
-        """
-        _id = node_doc["_id"]
-        source = node_doc["_source"]
-        return _id, source
-
-    def filter_doc(doc):
-        return '_source' in doc and doc['_source'] is not None
-
-
-    def filter_invalid_doc(doc):
-        return not doc['found']
-
-
     # we generate a dict like {"NCBITaxon:2051579" : {...}} for fast accessing
-    details = dict(
-        map(
-            get_sources,
-            filter(filter_doc, docs)
-        ),
-    )
+    details = get_es_docs_using_ids(client, NODE_INDEX, ids, return_id_dict=True)
 
     return details

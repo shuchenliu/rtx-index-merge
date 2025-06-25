@@ -68,8 +68,6 @@ def main():
     # make sure we have a clean slate
     refresh_es_index(ES_URL)
 
-    return
-
 
     # set worker number as needed
     if len(offsets) < 10:
