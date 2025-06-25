@@ -11,18 +11,15 @@ from utils.writes import write_to_temp
 
 
 @delayed
-def delayed_task(es_url: str, target_file: str, index: int, start: int, end: Optional[int]):
+def delayed_task(es_url: str, target_file: str, index: int, start: int, end: Optional[int]) -> int:
     worker = get_worker()
     if not hasattr(worker, "es_client"):
         worker.es_client = Elasticsearch(es_url)
 
-    updated_edges = process_edges(worker.es_client, target_file, start,                                  end)
-    write_to_temp(index, updated_edges)
-    n_edges_processed = len(updated_edges)
+    num_processed = process_edges(worker.es_client, target_file, start,                                  end)
+    # write_to_temp(index, updated_edges)
 
-    del updated_edges
-
-    return n_edges_processed
+    return num_processed
 
 def get_n_workers():
     return int(os.getenv("N_WORKERS", 10))

@@ -42,6 +42,10 @@ def main():
 
     ES_URL = "http://%s:%s" % (SERVER, PORT)
 
+    # assert index name is set
+    INDEX_NAME = os.getenv("INDEX_NAME")
+    assert INDEX_NAME is not None
+
     # overwrite edge file if specified
     parser = argparse.ArgumentParser()
     parser.add_argument("filepath", nargs="?", default=EDGE_FILE, help="Path to the input file")
@@ -81,7 +85,7 @@ def main():
     with timeit('distributed tasks'):
         distribute_tasks(es_url=ES_URL, target_file=edge_file_path, offsets=offsets)
         # write final output file
-        stitch_temps(OUTPUT_DIR)
+        # stitch_temps(OUTPUT_DIR)
         # subprocess.run(["./merge_temps.sh", OUTPUT_DIR], check=True)
 
     # remove temp files

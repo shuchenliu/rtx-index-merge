@@ -1,8 +1,9 @@
 import json
+import os
 from functools import reduce
 from typing import Optional
 
-from elasticsearch import Elasticsearch
+from elasticsearch import Elasticsearch, helpers
 from utils.nodes import get_nodes_details
 
 
@@ -28,7 +29,7 @@ def load_edges(target_file:str, start: int, end:Optional[int]) -> list:
         return loaded
 
 
-def process_edges(es_client: Elasticsearch, target_file:str, start: int, end: Optional[int]) -> list[str]:
+def process_edges(es_client: Elasticsearch, target_file:str, start: int, end: Optional[int]) -> int:
     loaded = load_edges(target_file, start, end)
     # 0. get `subject` and `object`
     def ids_getter(id_set: set, edge: dict):
@@ -52,7 +53,22 @@ def process_edges(es_client: Elasticsearch, target_file:str, start: int, end: Op
         if "object" in edge:
             edge["object"] = details[edge["object"]]
 
-        loaded[index] = json.dumps(edge)
+        # loaded[index] = json.dumps(edge)
+
+        # prepare for insertions
+        loaded[index] = {
+            "_index": os.getenv("INDEX_NAME"),
+            "_id": edge['id'],
+            "_source": edge
+        }
+
+    insert_docs_to_index(es_client, loaded)
+    num_processed = len(loaded)
+
+    del loaded
+
+    return num_processed
 
 
-    return loaded
+def insert_docs_to_index(es_client: Elasticsearch, operations: list):
+    helpers.bulk(es_client, operations, chunk_size=5000)
