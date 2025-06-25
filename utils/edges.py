@@ -6,36 +6,23 @@ from typing import Optional
 from elasticsearch import Elasticsearch, helpers
 from elasticsearch.helpers import BulkIndexError
 
+from utils.constants import NODE_INDEX, EDGE_INDEX
 from utils.nodes import get_nodes_details
 
 
 def refresh_es_index(es_url: str):
-    es_client = Elasticsearch(es_url)
+    es_client = Elasticsearch(es_url, request_timeout=240)
     INDEX_NAME = os.environ.get("INDEX_NAME")
 
-    
+    node_mapping = es_client.indices.get_mapping(index=NODE_INDEX)
+    node_props = node_mapping[NODE_INDEX]["mappings"]["properties"]
 
-    node_mapping = es_client.indices.get_mapping(index="rtx_kg2_nodes")
-    node_props = node_mapping["rtx_kg2_nodes"]["mappings"]["properties"]
+    edge_mapping = es_client.indices.get_mapping(index=EDGE_INDEX)
+    edge_props = edge_mapping[EDGE_INDEX]["mappings"]["properties"]
 
-    edge_mapping = es_client.indices.get_mapping(index="rtx_kg2_edges")
-    edge_props = edge_mapping["rtx_kg2_edges"]["mappings"]["properties"]
+    edge_props["subject"] = {"properties": node_props}
+    edge_props["object"] = {"properties": node_props}
 
-    # edge_props["subject"] = {"properties": node_props}
-    # edge_props["object"] = {"properties": node_props}
-
-    subject_object_mapping = {
-        "properties": {
-            "id": {
-                "type": "keyword"
-            }
-        },
-        "type": 'object',
-        "dynamic": False,
-    }
-
-    edge_props["subject"] = subject_object_mapping
-    edge_props["object"] = subject_object_mapping
 
     index_settings_and_mappings = {
         "mappings": {
@@ -54,7 +41,23 @@ def refresh_es_index(es_url: str):
 
     es_client.indices.create(index=INDEX_NAME, body=index_settings_and_mappings)
 
+    # copy index from edge, preparing for update
+    # reindex_edges(es_client, INDEX_NAME)
 
+
+def reindex_edges(es_client: Elasticsearch, dest_index_name: str):
+    reindex_body = {
+        "source": {
+            "index": EDGE_INDEX,
+            "_source": {
+                "excludes": ["subject", "object"]
+            }
+        },
+        "dest": {
+            "index": dest_index_name,
+        }
+    }
+    es_client.reindex(body=reindex_body)
 
 def load_edges(target_file:str, start: int, end:Optional[int]) -> list:
     """
