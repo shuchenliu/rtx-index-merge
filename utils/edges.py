@@ -13,19 +13,44 @@ def refresh_es_index(es_url: str):
     es_client = Elasticsearch(es_url)
     INDEX_NAME = os.environ.get("INDEX_NAME")
 
-    index_settings = {
+    
+
+    node_mapping = es_client.indices.get_mapping(index="rtx_kg2_nodes")
+    node_props = node_mapping["rtx_kg2_nodes"]["mappings"]["properties"]
+
+    edge_mapping = es_client.indices.get_mapping(index="rtx_kg2_edges")
+    edge_props = edge_mapping["rtx_kg2_edges"]["mappings"]["properties"]
+
+    # edge_props["subject"] = {"properties": node_props}
+    # edge_props["object"] = {"properties": node_props}
+
+    subject_object_mapping = {
+        "properties": {
+            "id": {
+                "type": "keyword"
+            }
+        }
+    }
+
+    edge_props["subject"] = subject_object_mapping
+    edge_props["object"] = subject_object_mapping
+
+    index_settings_and_mappings = {
+        "mappings": {
+            "properties": edge_props
+        },
         "settings": {
-        "number_of_shards": 5,
-        "number_of_replicas": 0,
-        "codec": "best_compression"
-      }
+            "number_of_shards": 5,
+            "number_of_replicas": 0,
+            "codec": "best_compression"
+        }
     }
 
     # refresh index
     if es_client.indices.exists(index=INDEX_NAME):
         es_client.indices.delete(index=INDEX_NAME)
 
-    es_client.indices.create(index=INDEX_NAME, body=index_settings)
+    es_client.indices.create(index=INDEX_NAME, body=index_settings_and_mappings)
 
 
 
@@ -95,6 +120,7 @@ def process_edges(es_client: Elasticsearch, target_file:str, start: int, end: Op
 def insert_docs_to_index(es_client: Elasticsearch, operations: list):
     try:
         helpers.bulk(es_client, operations, chunk_size=5000, request_timeout=240)
+        # helpers.bulk(es_client, operations, chunk_size=5000)
     except BulkIndexError as e:
         for i, error in enumerate(e.errors[:1]):  # Only show first
             doc_id = error["index"].get("_id", "N/A")
