@@ -29,7 +29,9 @@ def refresh_es_index(es_url: str):
             "id": {
                 "type": "keyword"
             }
-        }
+        },
+        "type": 'object',
+        "dynamic": False,
     }
 
     edge_props["subject"] = subject_object_mapping
