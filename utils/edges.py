@@ -8,6 +8,7 @@ from elasticsearch import Elasticsearch
 from utils.constants import EDGE_INDEX
 from utils.es import get_es_docs_using_ids, insert_docs_to_index
 from utils.nodes import get_nodes_details
+from utils.writes import write_to_temp
 
 
 def load_edge_ids(target_file:str, start: int, end:Optional[int]) -> list[str]:
@@ -44,7 +45,7 @@ def load_edges(es_client: Elasticsearch, target_file: str, start: int, end: Opti
 
 
 
-def process_edges(es_client: Elasticsearch, target_file:str, start: int, end: Optional[int]) -> int:
+def process_edges(es_client: Elasticsearch, target_file:str, start: int, end: Optional[int], meta_index: int, is_prod=False) -> int:
     loaded = load_edges(es_client, target_file, start, end)
     # 0. get `subject` and `object`
     def ids_getter(id_set: set, edge: dict):
@@ -71,13 +72,20 @@ def process_edges(es_client: Elasticsearch, target_file:str, start: int, end: Op
         # loaded[index] = json.dumps(edge)
 
         # prepare for insertions
-        loaded[index] = {
-            "_index": os.getenv("INDEX_NAME"),
-            "_id": edge['id'],
-            "_source": edge
-        }
+        if is_prod:
+            loaded[index] = {
+                "_index": os.getenv("INDEX_NAME"),
+                "_id": edge['id'],
+                "_source": edge
+            }
+        else:
+            loaded[index] = json.dumps(edge)
 
-    insert_docs_to_index(es_client, loaded)
+    if is_prod:
+        insert_docs_to_index(es_client, loaded)
+    else:
+        write_to_temp(meta_index, loaded)
+
     num_processed = len(loaded)
 
     del loaded

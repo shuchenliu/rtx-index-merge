@@ -24,18 +24,20 @@ def load_env():
     is_prod = os.getenv("PROD") == "true"
     if is_prod:
         load_dotenv('.env.prod')
-        return
+        return is_prod
 
     load_dotenv('.env.dev')
     is_in_docker = os.getenv("IN_DOCKER") == "true"
     if is_in_docker:
         os.environ["SERVER"] = "host.docker.internal"
 
+    return is_prod
+
 
 def main():
 
     # load envs
-    load_env()
+    is_prod = load_env()
     SERVER = os.getenv("SERVER")
     PORT = os.getenv("PORT")
     EDGE_FILE = os.getenv("EDGE_FILE")
@@ -66,7 +68,8 @@ def main():
 
 
     # make sure we have a clean slate
-    refresh_es_index(ES_URL)
+    if is_prod:
+        refresh_es_index(ES_URL)
 
 
     # set worker number as needed
@@ -89,9 +92,10 @@ def main():
     Distributed/parallel run
     '''
     with timeit('distributed tasks'):
-        distribute_tasks(es_url=ES_URL, target_file=edge_file_path, offsets=offsets)
+        distribute_tasks(es_url=ES_URL, target_file=edge_file_path, offsets=offsets, is_prod=is_prod)
         # write final output file
-        # stitch_temps(OUTPUT_DIR)
+        if not is_prod:
+            stitch_temps(OUTPUT_DIR)
         # subprocess.run(["./merge_temps.sh", OUTPUT_DIR], check=True)
 
     # remove temp files
