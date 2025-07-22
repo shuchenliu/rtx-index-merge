@@ -45,19 +45,63 @@ def insert_docs_to_index(es_client: Elasticsearch, operations: list):
             print(f"[{i}] ID={doc_id} → {reason}")
 
 
-def reindex_edges(es_client: Elasticsearch, edges_index, dest_index_name: str):
+def reindex(es_client: Elasticsearch, source_index_name, dest_index_name: str):
     reindex_body = {
         "source": {
-            "index": edges_index,
-            "_source": {
-                "excludes": ["subject", "object"]
-            }
+            "index": source_index_name,
         },
         "dest": {
             "index": dest_index_name,
         }
     }
-    es_client.reindex(body=reindex_body)
+    es_client.reindex(body=reindex_body, wait_for_completion=False)
+
+
+def migrate_merged_index_to_nested(es_client):
+    nested_index_name = os.environ.get("NESTED_INDEX_NAME")
+    merged_index_name = os.environ.get("INDEX_NAME")
+
+    reindex(es_client, source_index_name=merged_index_name, dest_index_name=nested_index_name)
+
+
+
+def create_nested_index(es_url:str):
+    es_client = Elasticsearch(es_url, request_timeout=240)
+    nested_index_name = os.environ.get("NESTED_INDEX_NAME")
+    merged_index_name = os.environ.get("INDEX_NAME")
+
+    merged_edges_mappings = es_client.indices.get_mapping(index=merged_index_name)
+    nested_props = merged_edges_mappings[merged_index_name]["mappings"]["properties"]
+
+    # modify `subject` and `object` field to be nested
+    fields = ["object", "subject"]
+    for field in fields:
+        mapping = nested_props[field]
+        nested_props[field] = {
+            **mapping,
+            "type": "nested"
+        }
+
+    nested_settings_and_mappings = {
+        "mappings": {
+            "properties": nested_props
+        },
+        "settings": {
+            "number_of_shards": 5,
+            "number_of_replicas": 0,
+            "codec": "best_compression"
+        }
+    }
+
+    if es_client.indices.exists(index=nested_index_name):
+        es_client.indices.delete(index=nested_index_name)
+
+    es_client.indices.create(index=nested_index_name, body=nested_settings_and_mappings)
+
+    def migrate_handle():
+        migrate_merged_index_to_nested(es_client)
+
+    return migrate_handle
 
 
 def refresh_es_index(es_url: str):
@@ -90,6 +134,3 @@ def refresh_es_index(es_url: str):
         es_client.indices.delete(index=INDEX_NAME)
 
     es_client.indices.create(index=INDEX_NAME, body=index_settings_and_mappings)
-
-    # copy index from edge, preparing for update
-    # reindex_edges(es_client, INDEX_NAME)
