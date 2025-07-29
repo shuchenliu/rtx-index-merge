@@ -64,6 +64,45 @@ def migrate_merged_index_to_nested(es_client):
     reindex(es_client, source_index_name=merged_index_name, dest_index_name=nested_index_name)
 
 
+def create_index_using_mapping(es_client:Elasticsearch, name: str, props):
+    mapping_and_settings = {
+        "mappings": {
+            "properties": props
+        },
+        "settings": {
+            "number_of_shards": 5,
+            "number_of_replicas": 0,
+            "codec": "best_compression"
+        }
+    }
+
+    if es_client.indices.exists(index=name):
+        es_client.indices.delete(index=name)
+
+    es_client.indices.create(index=name, body=mapping_and_settings)
+
+
+def created_adjacency_list_index(es_url:str):
+    es_client = Elasticsearch(es_url, request_timeout=240)
+    adj_index_name = os.environ.get("ADJACENCY_LIST_INDEX_NAME")
+
+    node_mapping = es_client.indices.get_mapping(index=NODE_INDEX)
+    node_props = node_mapping[NODE_INDEX]["mappings"]["properties"]
+
+    edge_mapping = es_client.indices.get_mapping(index=EDGE_INDEX)
+    edge_props = edge_mapping[EDGE_INDEX]["mappings"]["properties"]
+
+    # add edges props
+    fields = ['in_edges', 'out_edges']
+    for field in fields:
+        node_props[field] = {
+            'type': 'nested',
+            'properties': edge_props
+        }
+
+    create_index_using_mapping(es_client, adj_index_name, node_props)
+
+
 
 def create_nested_index(es_url:str):
     es_client = Elasticsearch(es_url, request_timeout=240)
@@ -82,21 +121,7 @@ def create_nested_index(es_url:str):
             "type": "nested"
         }
 
-    nested_settings_and_mappings = {
-        "mappings": {
-            "properties": nested_props
-        },
-        "settings": {
-            "number_of_shards": 5,
-            "number_of_replicas": 0,
-            "codec": "best_compression"
-        }
-    }
-
-    if es_client.indices.exists(index=nested_index_name):
-        es_client.indices.delete(index=nested_index_name)
-
-    es_client.indices.create(index=nested_index_name, body=nested_settings_and_mappings)
+    create_index_using_mapping(es_client, nested_index_name, nested_props)
 
     def migrate_handle():
         migrate_merged_index_to_nested(es_client)
@@ -118,19 +143,4 @@ def refresh_es_index(es_url: str):
     edge_props["object"] = {"properties": node_props}
 
 
-    index_settings_and_mappings = {
-        "mappings": {
-            "properties": edge_props
-        },
-        "settings": {
-            "number_of_shards": 5,
-            "number_of_replicas": 0,
-            "codec": "best_compression"
-        }
-    }
-
-    # refresh index
-    if es_client.indices.exists(index=INDEX_NAME):
-        es_client.indices.delete(index=INDEX_NAME)
-
-    es_client.indices.create(index=INDEX_NAME, body=index_settings_and_mappings)
+    create_index_using_mapping(es_client, INDEX_NAME, edge_props)
