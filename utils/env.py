@@ -15,3 +15,11 @@ def check_is_prod():
         os.environ["SERVER"] = "host.docker.internal"
 
     return is_prod
+
+
+def get_es_url():
+    SERVER = os.getenv("SERVER")
+    PORT = os.getenv("PORT")
+    ES_URL = "http://%s:%s" % (SERVER, PORT)
+
+    return ES_URL

@@ -72,7 +72,8 @@ def create_index_using_mapping(es_client:Elasticsearch, name: str, props):
         "settings": {
             "number_of_shards": 5,
             "number_of_replicas": 0,
-            "codec": "best_compression"
+            "codec": "best_compression",
+            "index.mapping.nested_objects.limit": 50000
         }
     }
 
@@ -101,6 +102,11 @@ def created_adjacency_list_index(es_url:str):
         }
 
     create_index_using_mapping(es_client, adj_index_name, node_props)
+
+    def migrate_handle():
+        reindex(es_client, source_index_name=NODE_INDEX, dest_index_name=adj_index_name)
+
+    return migrate_handle
 
 
 
