@@ -2,7 +2,7 @@ import json
 import os
 
 from elastic_transport import ObjectApiResponse
-from elasticsearch import Elasticsearch
+from elasticsearch import Elasticsearch, helpers
 
 from utils.benchmark import timeit
 from utils.env import check_is_prod, get_es_url
@@ -24,17 +24,33 @@ def main():
     with timeit('process 10k nodes'):
         populate_by_node(es_client)
 
-def populate_by_node(es_client: Elasticsearch):
-    target_file = './nodes_10k.jsonl'
-    line_count = 0
 
-    with open(target_file,"r") as f:
+def generate_actions(es_client: Elasticsearch, target_file: str):
+    line_count = 0
+    total_edges_processed = 0
+
+    with open(target_file, "r") as f:
         for line in f:
             data = json.loads(line)
             node_id = data["id"]
-            total_edges = process_single_node(es_client, node_id)
+            payload, total_edges = process_single_node(es_client, node_id)
+
+
             line_count += 1
-            print(f"Total lines processed: {line_count} with {total_edges} edges", end='\r')
+            total_edges_processed += total_edges
+
+            if line_count % 1000 == 0:
+                print(f"Total lines processed: {line_count} with {total_edges_processed / line_count} edges on average", end='\r', flush=True)
+
+            yield payload
+
+
+def populate_by_node(es_client: Elasticsearch):
+    # target_file = './nodes_10k.jsonl'
+    target_file = './nodes_1500.jsonl'
+
+    helpers.bulk(es_client, generate_actions(es_client, target_file), chunk_size=1000, request_timeout=300)
+
 
 
 
@@ -85,15 +101,17 @@ def process_single_node(es_client: Elasticsearch, node_id: str):
 
     total_edges = len(in_edges) + len(out_edges)
 
-
-    es_client.update(index=ADJ_INDEX, id=node_id, body={
+    payload = {
+        "_op_type": "update",
+        "_index": ADJ_INDEX,
+        "_id": node_id,
         "doc": {
             "out_edges": out_edges,
             "in_edges": in_edges,
         }
-    })
+    }
 
-    return total_edges
+    return payload, total_edges
 
 
 
