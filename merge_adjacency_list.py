@@ -24,30 +24,41 @@ def main():
     with timeit('process 10k nodes'):
         populate_by_node(es_client)
 
+def get_node_ids(target_file: str, limit=1500):
+    with open(target_file, "rb") as f:
+        full_ids = json.load(f)
+
+    # only use partial ids for testing
+    node_ids = full_ids[:limit]
+    del full_ids
+
+    return node_ids
+
 
 def generate_actions(es_client: Elasticsearch, target_file: str):
     line_count = 0
     total_edges_processed = 0
 
-    with open(target_file, "r") as f:
-        for line in f:
-            data = json.loads(line)
-            node_id = data["id"]
-            payload, total_edges = process_single_node(es_client, node_id)
 
+    limit = 10000
+    node_ids = get_node_ids(target_file, limit)
 
-            line_count += 1
-            total_edges_processed += total_edges
+    assert len(node_ids) == limit
 
-            if line_count % 1000 == 0:
-                print(f"Total lines processed: {line_count} with {total_edges_processed / line_count} edges on average", end='\r', flush=True)
+    for node_id in node_ids:
+        payload, total_edges = process_single_node(es_client, node_id)
+        line_count += 1
+        total_edges_processed += total_edges
 
-            yield payload
+        if line_count % 1000 == 0:
+            print(f"Total lines processed: {line_count} with {total_edges_processed / line_count} edges on average", end='\r', flush=True)
+
+        yield payload
 
 
 def populate_by_node(es_client: Elasticsearch):
     # target_file = './nodes_10k.jsonl'
-    target_file = './nodes_1500.jsonl'
+    target_file = './nodes_id.json'
 
     helpers.bulk(es_client, generate_actions(es_client, target_file), chunk_size=1000, request_timeout=300)
 
