@@ -1,3 +1,10 @@
+"""
+cd utils
+python node_id_extractor.py
+
+"""
+
+
 import json
 
 from benchmark import timeit
