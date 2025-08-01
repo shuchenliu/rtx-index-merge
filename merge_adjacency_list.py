@@ -1,5 +1,8 @@
 import json
+import math
+import multiprocessing
 import os
+from time import sleep
 
 from elastic_transport import ObjectApiResponse
 from elasticsearch import Elasticsearch, helpers
@@ -21,18 +24,86 @@ def main():
 
     es_client = Elasticsearch(es_url, request_timeout=300)
 
-    with timeit('process 10k nodes'):
-        populate_by_node(es_client)
+    total_workers = 10
+
+    progress_array = multiprocessing.Array('i', [0] * total_workers)
+
+    # limit = 10000
+    limit = 1500
+
+    node_id_file = './nodes_id.json'
+    node_ids = get_node_ids(node_id_file, limit)
+
+    total_nodes = len(node_ids)
+    nodes_per_worker = math.ceil(total_nodes / total_workers)
+
+    # Start monitor
+    monitor_proc = multiprocessing.Process(target=monitor_progress, args=(progress_array, total_nodes))
+    monitor_proc.start()
+
+    with timeit(f'process {limit} nodes'):
+        # populate_by_node(es_client)
+
+        # Spawn workers
+        workers = []
+        for i in range(total_workers):
+            start = i * nodes_per_worker
+            end = min(start + nodes_per_worker, total_nodes)
+            chunk = node_ids[start:end]
+
+            p = multiprocessing.Process(target=per_worker, args=(es_url, chunk, progress_array, i))
+            p.start()
+            workers.append(p)
+
+        # Wait for all workers to finish
+        for p in workers:
+            p.join()
+
+    monitor_proc.join()
+
 
 def get_node_ids(target_file: str, limit=1500):
     with open(target_file, "rb") as f:
         full_ids = json.load(f)
+
+
+    if limit is None:
+        return full_ids
+
 
     # only use partial ids for testing
     node_ids = full_ids[:limit]
     del full_ids
 
     return node_ids
+
+
+def monitor_progress(progress_array, total_count):
+    while True:
+        sleep(1)
+        current_total = sum(progress_array)
+        print(f"Progress: {current_total}/{total_count} nodes processed", end='\r', flush=True)
+        if current_total >= total_count:
+            print()  # newline after complete
+            break
+
+def _generate_actions(es_client: Elasticsearch, nodes_ids: list[str], progress_array: list, worker_id:int):
+    processed = 0
+    for node_id in nodes_ids:
+        payload, total_edges = process_single_node(es_client, node_id)
+        processed += 1
+        progress_array[worker_id] += 1
+
+        yield payload
+
+
+def per_worker(es_url:str, nodes_ids: list[str], progress_array: list, worker_id:int):
+    es_client = Elasticsearch(es_url)
+    actions_generated = _generate_actions(es_client, nodes_ids, progress_array, worker_id)
+    helpers.bulk(es_client, actions_generated, request_timeout=300)
+
+
+
 
 
 def generate_actions(es_client: Elasticsearch, target_file: str):
