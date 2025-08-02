@@ -1,7 +1,6 @@
 import json
 import math
 import multiprocessing
-import os
 from time import sleep
 
 from elastic_transport import ObjectApiResponse
@@ -87,7 +86,7 @@ def monitor_progress(progress_array, total_count):
             print()  # newline after complete
             break
 
-def _generate_actions(es_client: Elasticsearch, nodes_ids: list[str], progress_array: list, worker_id:int):
+def generate_actions(es_client: Elasticsearch, nodes_ids: list[str], progress_array: list, worker_id:int):
     processed = 0
     for node_id in nodes_ids:
         payload, total_edges = process_single_node(es_client, node_id)
@@ -99,42 +98,8 @@ def _generate_actions(es_client: Elasticsearch, nodes_ids: list[str], progress_a
 
 def per_worker(es_url:str, nodes_ids: list[str], progress_array: list, worker_id:int):
     es_client = Elasticsearch(es_url)
-    actions_generated = _generate_actions(es_client, nodes_ids, progress_array, worker_id)
+    actions_generated = generate_actions(es_client, nodes_ids, progress_array, worker_id)
     helpers.bulk(es_client, actions_generated, request_timeout=300)
-
-
-
-
-
-def generate_actions(es_client: Elasticsearch, target_file: str):
-    line_count = 0
-    total_edges_processed = 0
-
-
-    limit = 10000
-    node_ids = get_node_ids(target_file, limit)
-
-    assert len(node_ids) == limit
-
-    for node_id in node_ids:
-        payload, total_edges = process_single_node(es_client, node_id)
-        line_count += 1
-        total_edges_processed += total_edges
-
-        if line_count % 1000 == 0:
-            print(f"Total lines processed: {line_count} with {total_edges_processed / line_count} edges on average", end='\r', flush=True)
-
-        yield payload
-
-
-def populate_by_node(es_client: Elasticsearch):
-    # target_file = './nodes_10k.jsonl'
-    target_file = './nodes_id.json'
-
-    helpers.bulk(es_client, generate_actions(es_client, target_file), chunk_size=1000, request_timeout=300)
-
-
-
 
 
 
