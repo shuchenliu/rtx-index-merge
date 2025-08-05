@@ -1,3 +1,4 @@
+import argparse
 import asyncio
 import json
 import math
@@ -13,7 +14,8 @@ from elasticsearch import Elasticsearch, helpers, AsyncElasticsearch
 from utils.benchmark import timeit
 from utils.env import check_is_prod, get_es_url
 from utils.es import created_adjacency_list_index
-from utils.constants import NODE_INDEX, EDGE_INDEX, ADJ_INDEX
+from utils.constants import EDGE_INDEX, ADJ_INDEX
+from utils.parallel import get_n_workers
 
 
 def clean_slate(es_url: str):
@@ -28,21 +30,33 @@ def get_run_id():
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--batch", type=int, required=True, help="Index of the batch to process")
+
+    args = parser.parse_args()
+
     is_prod = check_is_prod()
 
     es_url = get_es_url()
     # clean_slate(es_url)
     run_id = get_run_id()
 
-    total_workers = 10
+    total_workers = get_n_workers()
+    # how many async actions allowed per worker
     concurrency_limit = 2
     progress_array = multiprocessing.Array('i', [0] * total_workers)
 
-    limit = 10000
+    limit = 100
     # limit = 1500
 
+    # node_id_file = './10k_nodes_id.json'
     node_id_file = './nodes_id.json'
-    node_ids = get_node_ids(node_id_file, limit)
+
+
+    if args.batch is not None:
+        node_ids = get_node_ids_for_batch(node_id_file, args.batch)
+    else:
+        node_ids = get_node_ids(node_id_file, limit)
 
     total_nodes = len(node_ids)
     nodes_per_worker = math.ceil(total_nodes / total_workers)
@@ -82,8 +96,21 @@ def write_failed_nodes(failed_nodes: ListProxy, run_id: str):
     with open(f'./failed_nodes_{run_id}.json', 'w', encoding='utf-8') as f:
         json.dump(list(failed_nodes), f)
 
+def get_node_ids_for_batch(target_file: str, batch_index: int, num_of_batches=5):
+    assert 0 <= batch_index < num_of_batches
 
-def get_node_ids(target_file: str, limit: int):
+    with open(target_file, "rb") as f:
+        full_ids = json.load(f)
+
+    total_len = len(full_ids)
+    k, m = divmod(total_len, num_of_batches)
+    start = batch_index * k + min(batch_index, m)
+    end = start + k + (1 if batch_index < m else 0)
+
+    return full_ids[start:end]
+
+
+def get_node_ids(target_file: str, limit: int | None):
     with open(target_file, "rb") as f:
         full_ids = json.load(f)
 
