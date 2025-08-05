@@ -31,7 +31,7 @@ def get_run_id():
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--batch", type=int, required=True, help="Index of the batch to process")
+    parser.add_argument("--batch", type=int, help="Index of the batch to process")
 
     args = parser.parse_args()
 
