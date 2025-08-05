@@ -99,16 +99,18 @@ async def generate_actions(es_client: AsyncElasticsearch, nodes_ids: list[str], 
         async with semaphore:
             payload, total_edges = await process_single_node(es_client, _node_id)
             progress_array[worker_id] += 1
+            return payload, _node_id
 
-            return payload
-
-    tasks_generator = [process_with_semaphore(node_id) for node_id in nodes_ids]
+    tasks_generator = (process_with_semaphore(node_id) for node_id in nodes_ids)
 
     for coro in asyncio.as_completed(tasks_generator):
-        # payload = await coro
-        # yield payload
+        payload, node_id = await coro
+        if payload is not None:
+            yield payload
+        else:
+            print(f'something wrong with {node_id}')
 
-        yield await coro
+
 
 
 async def bulk_update(es_client: AsyncElasticsearch, actions: AsyncIterable[dict], batch_size=1000 * 2):
@@ -190,7 +192,10 @@ async def get_edges(es_client: AsyncElasticsearch, node_id: str):
 
 
 async def process_single_node(es_client: AsyncElasticsearch, node_id: str):
-    out_edges, in_edges = await get_edges(es_client, node_id)
+    try:
+        out_edges, in_edges = await get_edges(es_client, node_id)
+    except Exception as e:
+        return None, 0
 
     total_edges = len(in_edges) + len(out_edges)
 
