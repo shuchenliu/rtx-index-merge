@@ -1,10 +1,12 @@
+import asyncio
 import json
 import math
 import multiprocessing
 from time import sleep
+from typing import AsyncIterable
 
 from elastic_transport import ObjectApiResponse
-from elasticsearch import Elasticsearch, helpers
+from elasticsearch import Elasticsearch, helpers, AsyncElasticsearch
 
 from utils.benchmark import timeit
 from utils.env import check_is_prod, get_es_url
@@ -20,15 +22,12 @@ def main():
     # # migrate data from nodes to adj_list as a base
     # migrate()
 
-
-    es_client = Elasticsearch(es_url, request_timeout=300)
-
     total_workers = 10
 
     progress_array = multiprocessing.Array('i', [0] * total_workers)
 
-    # limit = 10000
-    limit = 1500
+    limit = 10000
+    # limit = 1500
 
     node_id_file = './nodes_id.json'
     node_ids = get_node_ids(node_id_file, limit)
@@ -50,7 +49,8 @@ def main():
             end = min(start + nodes_per_worker, total_nodes)
             chunk = node_ids[start:end]
 
-            p = multiprocessing.Process(target=per_worker, args=(es_url, chunk, progress_array, i))
+            # p = multiprocessing.Process(target=per_worker, args=(es_url, chunk, progress_array, i))
+            p = multiprocessing.Process(target=run_per_worker, args=(es_url, chunk, progress_array, i))
             p.start()
             workers.append(p)
 
@@ -86,20 +86,59 @@ def monitor_progress(progress_array, total_count):
             print()  # newline after complete
             break
 
-def generate_actions(es_client: Elasticsearch, nodes_ids: list[str], progress_array: list, worker_id:int):
-    processed = 0
-    for node_id in nodes_ids:
-        payload, total_edges = process_single_node(es_client, node_id)
-        processed += 1
-        progress_array[worker_id] += 1
+async def generate_actions(es_client: AsyncElasticsearch, nodes_ids: list[str], progress_array: list, worker_id:int):
+    concurrency_limit = 5
+    semaphore = asyncio.Semaphore(concurrency_limit)
 
-        yield payload
+    async def process_with_semaphore(_node_id: str):
+        async with semaphore:
+            progress_array[worker_id] += 1
+            payload, total_edges = await process_single_node(es_client, _node_id)
+
+            return payload
+
+    tasks_generator = [process_with_semaphore(node_id) for node_id in nodes_ids]
+
+    for coro in asyncio.as_completed(tasks_generator):
+        # payload = await coro
+        # yield payload
+
+        yield await coro
 
 
-def per_worker(es_url:str, nodes_ids: list[str], progress_array: list, worker_id:int):
-    es_client = Elasticsearch(es_url)
-    actions_generated = generate_actions(es_client, nodes_ids, progress_array, worker_id)
-    helpers.bulk(es_client, actions_generated, request_timeout=300)
+async def bulk_update(es_client: AsyncElasticsearch, actions: AsyncIterable[dict], batch_size=1000 * 2):
+    buffer = []
+
+    async for action in actions:
+        buffer.append(action)
+        if len(buffer) == batch_size:
+            await es_client.bulk(operations=buffer)
+            buffer.clear()
+
+    if len(buffer) > 0:
+        await es_client.bulk(operations=buffer)
+
+
+# async wrapper for worker task
+def run_per_worker(*args):
+    asyncio.run(per_worker(*args))
+
+# entry point for paral. work
+async def per_worker(es_url:str, nodes_ids: list[str], progress_array: list, worker_id:int):
+    # es_client = Elasticsearch(es_url)
+
+
+
+    # async_es_client = AsyncElasticsearch(es_url, request_timeout=300)
+    # es_client = Elasticsearch(es_url, request_timeout=300)
+
+
+    async with AsyncElasticsearch(es_url, request_timeout=300) as async_es_client:
+        actions_generated = generate_actions(async_es_client, nodes_ids, progress_array, worker_id)
+        # await bulk_update(async_es_client, actions_generated)
+
+        await helpers.async_bulk(async_es_client, actions_generated)
+
 
 
 
@@ -110,7 +149,7 @@ def extract_sources(response: ObjectApiResponse):
     sources = [hit["_source"] for hit in hits]
     return sources, num_hits
 
-def get_edges(es_client: Elasticsearch, node_id: str):
+async def get_edges(es_client: AsyncElasticsearch, node_id: str):
     queries = [
         ("subject.keyword", node_id),
         ("object.keyword", node_id),
@@ -129,7 +168,7 @@ def get_edges(es_client: Elasticsearch, node_id: str):
             }
         })
 
-    responses = es_client.msearch(index=EDGE_INDEX, body=query_body)
+    responses = await es_client.msearch(index=EDGE_INDEX, body=query_body)
 
     out_edges, num_out_edges = extract_sources(responses["responses"][0])
     in_edges, num_in_edges = extract_sources(responses["responses"][1])
@@ -143,8 +182,8 @@ def get_edges(es_client: Elasticsearch, node_id: str):
     return out_edges, in_edges
 
 
-def process_single_node(es_client: Elasticsearch, node_id: str):
-    out_edges, in_edges = get_edges(es_client, node_id)
+async def process_single_node(es_client: AsyncElasticsearch, node_id: str):
+    out_edges, in_edges = await get_edges(es_client, node_id)
 
     total_edges = len(in_edges) + len(out_edges)
 
