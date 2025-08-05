@@ -92,8 +92,8 @@ async def generate_actions(es_client: AsyncElasticsearch, nodes_ids: list[str], 
 
     async def process_with_semaphore(_node_id: str):
         async with semaphore:
-            progress_array[worker_id] += 1
             payload, total_edges = await process_single_node(es_client, _node_id)
+            progress_array[worker_id] += 1
 
             return payload
 
