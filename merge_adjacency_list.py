@@ -14,13 +14,18 @@ from utils.es import created_adjacency_list_index
 from utils.constants import NODE_INDEX, EDGE_INDEX, ADJ_INDEX
 
 
+def clean_slate(es_url: str):
+    migrate = created_adjacency_list_index(es_url)
+
+    # migrate data from nodes to adj_list as a base
+    migrate()
+
+
 def main():
     is_prod = check_is_prod()
+
     es_url = get_es_url()
-    # migrate = created_adjacency_list_index(es_url)
-    #
-    # # migrate data from nodes to adj_list as a base
-    # migrate()
+    # clean_slate(es_url)
 
     total_workers = 10
 
