@@ -2,6 +2,7 @@ import asyncio
 import json
 import math
 import multiprocessing
+import uuid
 from multiprocessing.managers import ListProxy
 from time import sleep
 from typing import AsyncIterable
@@ -22,11 +23,16 @@ def clean_slate(es_url: str):
     migrate()
 
 
+def get_run_id():
+    return uuid.uuid4().hex[:10]
+
+
 def main():
     is_prod = check_is_prod()
 
     es_url = get_es_url()
     # clean_slate(es_url)
+    run_id = get_run_id()
 
     total_workers = 10
     concurrency_limit = 2
@@ -42,7 +48,7 @@ def main():
     nodes_per_worker = math.ceil(total_nodes / total_workers)
 
     # Start monitor
-    monitor_proc = multiprocessing.Process(target=monitor_progress, args=(progress_array, total_nodes))
+    monitor_proc = multiprocessing.Process(target=monitor_progress, args=(progress_array, total_nodes, run_id))
     monitor_proc.start()
 
     with multiprocessing.Manager() as manager, timeit(f'process {limit} nodes'):
@@ -67,13 +73,13 @@ def main():
 
         if failed_nodes:
             print(f'{len(failed_nodes)} nodes failed')
-            write_failed_nodes(failed_nodes)
+            write_failed_nodes(failed_nodes, run_id)
 
 
     monitor_proc.join()
 
-def write_failed_nodes(failed_nodes: ListProxy):
-    with open('./failed_nodes.json', 'w', encoding='utf-8') as f:
+def write_failed_nodes(failed_nodes: ListProxy, run_id: str):
+    with open(f'./failed_nodes_{run_id}.json', 'w', encoding='utf-8') as f:
         json.dump(list(failed_nodes), f)
 
 
@@ -93,11 +99,11 @@ def get_node_ids(target_file: str, limit: int):
     return node_ids
 
 
-def monitor_progress(progress_array, total_count):
+def monitor_progress(progress_array, total_count: int, run_id: str):
     while True:
         sleep(1)
         current_total = sum(progress_array)
-        print(f"Progress: {current_total}/{total_count} nodes processed", end='\r', flush=True)
+        print(f"Run {run_id} progress: {current_total}/{total_count} nodes processed", end='\r', flush=True)
         if current_total >= total_count:
             print()  # newline after complete
             break
