@@ -92,7 +92,7 @@ def monitor_progress(progress_array, total_count):
             break
 
 async def generate_actions(es_client: AsyncElasticsearch, nodes_ids: list[str], progress_array: list, worker_id:int):
-    concurrency_limit = 5
+    concurrency_limit = 2
     semaphore = asyncio.Semaphore(concurrency_limit)
 
     async def process_with_semaphore(_node_id: str):
