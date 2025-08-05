@@ -129,15 +129,17 @@ async def per_worker(es_url:str, nodes_ids: list[str], progress_array: list, wor
 
 
 
-    # async_es_client = AsyncElasticsearch(es_url, request_timeout=300)
+    async_es_client = AsyncElasticsearch(es_url, request_timeout=300)
     # es_client = Elasticsearch(es_url, request_timeout=300)
 
 
-    async with AsyncElasticsearch(es_url, request_timeout=300) as async_es_client:
-        actions_generated = generate_actions(async_es_client, nodes_ids, progress_array, worker_id)
-        # await bulk_update(async_es_client, actions_generated)
+    # async with async_es_client:
 
-        await helpers.async_bulk(async_es_client, actions_generated)
+    actions_generated = generate_actions(async_es_client, nodes_ids, progress_array, worker_id)
+    # await bulk_update(async_es_client, actions_generated)
+
+    await helpers.async_bulk(async_es_client, actions_generated)
+    await async_es_client.close()
 
 
 
