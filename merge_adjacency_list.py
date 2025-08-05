@@ -2,6 +2,7 @@ import asyncio
 import json
 import math
 import multiprocessing
+from multiprocessing.managers import ListProxy
 from time import sleep
 from typing import AsyncIterable
 
@@ -28,7 +29,7 @@ def main():
     # clean_slate(es_url)
 
     total_workers = 10
-
+    concurrency_limit = 2
     progress_array = multiprocessing.Array('i', [0] * total_workers)
 
     limit = 10000
@@ -44,8 +45,9 @@ def main():
     monitor_proc = multiprocessing.Process(target=monitor_progress, args=(progress_array, total_nodes))
     monitor_proc.start()
 
-    with timeit(f'process {limit} nodes'):
-        # populate_by_node(es_client)
+    with multiprocessing.Manager() as manager, timeit(f'process {limit} nodes'):
+        # create container for failed nodes
+        failed_nodes = manager.list()
 
         # Spawn workers
         workers = []
@@ -55,7 +57,7 @@ def main():
             chunk = node_ids[start:end]
 
             # p = multiprocessing.Process(target=per_worker, args=(es_url, chunk, progress_array, i))
-            p = multiprocessing.Process(target=run_per_worker, args=(es_url, chunk, progress_array, i))
+            p = multiprocessing.Process(target=run_per_worker, args=(es_url, concurrency_limit, chunk, progress_array, failed_nodes, i))
             p.start()
             workers.append(p)
 
@@ -63,10 +65,19 @@ def main():
         for p in workers:
             p.join()
 
+        if failed_nodes:
+            print(f'{len(failed_nodes)} nodes failed')
+            write_failed_nodes(failed_nodes)
+
+
     monitor_proc.join()
 
+def write_failed_nodes(failed_nodes: ListProxy):
+    with open('./failed_nodes.json', 'w', encoding='utf-8') as f:
+        json.dump(list(failed_nodes), f)
 
-def get_node_ids(target_file: str, limit=1500):
+
+def get_node_ids(target_file: str, limit: int):
     with open(target_file, "rb") as f:
         full_ids = json.load(f)
 
@@ -91,8 +102,7 @@ def monitor_progress(progress_array, total_count):
             print()  # newline after complete
             break
 
-async def generate_actions(es_client: AsyncElasticsearch, nodes_ids: list[str], progress_array: list, worker_id:int):
-    concurrency_limit = 2
+async def generate_actions(es_client: AsyncElasticsearch, concurrency_limit: int, nodes_ids: list[str], progress_array: list, failed_nodes: list, worker_id:int):
     semaphore = asyncio.Semaphore(concurrency_limit)
 
     async def process_with_semaphore(_node_id: str):
@@ -109,8 +119,7 @@ async def generate_actions(es_client: AsyncElasticsearch, nodes_ids: list[str], 
             yield payload
         else:
             print(f'something wrong with {node_id}')
-
-
+            failed_nodes.append(node_id)
 
 
 async def bulk_update(es_client: AsyncElasticsearch, actions: AsyncIterable[dict], batch_size=1000 * 2):
@@ -131,10 +140,8 @@ def run_per_worker(*args):
     asyncio.run(per_worker(*args))
 
 # entry point for paral. work
-async def per_worker(es_url:str, nodes_ids: list[str], progress_array: list, worker_id:int):
+async def per_worker(es_url:str, *args):
     # es_client = Elasticsearch(es_url)
-
-
 
     async_es_client = AsyncElasticsearch(es_url, request_timeout=300)
     # es_client = Elasticsearch(es_url, request_timeout=300)
@@ -142,7 +149,7 @@ async def per_worker(es_url:str, nodes_ids: list[str], progress_array: list, wor
 
     # async with async_es_client:
 
-    actions_generated = generate_actions(async_es_client, nodes_ids, progress_array, worker_id)
+    actions_generated = generate_actions(async_es_client, *args)
     # await bulk_update(async_es_client, actions_generated)
 
     await helpers.async_bulk(async_es_client, actions_generated)
