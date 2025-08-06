@@ -43,7 +43,7 @@ def main():
 
     total_workers = get_n_workers()
     # how many async actions allowed per worker
-    concurrency_limit = 2
+    concurrency_limit = 5
     progress_array = multiprocessing.Array('i', [0] * total_workers)
 
     limit = 100
