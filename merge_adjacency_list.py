@@ -3,10 +3,10 @@ import asyncio
 import json
 import math
 import multiprocessing
+import sys
 import uuid
 from multiprocessing.managers import ListProxy
 from time import sleep
-from typing import AsyncIterable
 
 from elastic_transport import ObjectApiResponse
 from elasticsearch import Elasticsearch, helpers, AsyncElasticsearch
@@ -46,7 +46,7 @@ def main():
     concurrency_limit = 5
     progress_array = multiprocessing.Array('i', [0] * total_workers)
 
-    limit = 100
+    limit = 10000
     # limit = 1500
 
     # node_id_file = './10k_nodes_id.json'
@@ -76,7 +76,6 @@ def main():
             end = min(start + nodes_per_worker, total_nodes)
             chunk = node_ids[start:end]
 
-            # p = multiprocessing.Process(target=per_worker, args=(es_url, chunk, progress_array, i))
             p = multiprocessing.Process(target=run_per_worker, args=(es_url, concurrency_limit, chunk, progress_array, failed_nodes, i))
             p.start()
             workers.append(p)
@@ -155,36 +154,14 @@ async def generate_actions(es_client: AsyncElasticsearch, concurrency_limit: int
             failed_nodes.append(node_id)
 
 
-async def bulk_update(es_client: AsyncElasticsearch, actions: AsyncIterable[dict], batch_size=1000 * 2):
-    buffer = []
-
-    async for action in actions:
-        buffer.append(action)
-        if len(buffer) == batch_size:
-            await es_client.bulk(operations=buffer)
-            buffer.clear()
-
-    if len(buffer) > 0:
-        await es_client.bulk(operations=buffer)
-
-
 # async wrapper for worker task
 def run_per_worker(*args):
     asyncio.run(per_worker(*args))
 
 # entry point for paral. work
 async def per_worker(es_url:str, *args):
-    # es_client = Elasticsearch(es_url)
-
     async_es_client = AsyncElasticsearch(es_url, request_timeout=300)
-    # es_client = Elasticsearch(es_url, request_timeout=300)
-
-
-    # async with async_es_client:
-
     actions_generated = generate_actions(async_es_client, *args)
-    # await bulk_update(async_es_client, actions_generated)
-
     await helpers.async_bulk(async_es_client, actions_generated)
     await async_es_client.close()
 
@@ -192,49 +169,125 @@ async def per_worker(es_url:str, *args):
 
 
 def extract_sources(response: ObjectApiResponse):
+    # if 'hits' not in response:
+    #     print(response)
+
     num_hits = response['hits']['total']['value']
 
     hits = response['hits']['hits']
     sources = [hit["_source"] for hit in hits]
     return sources, num_hits
 
+
+
+def extract_hits_from_response(response: ObjectApiResponse):
+    if 'hits' not in response:
+        raise Exception(f'invalid response: {response}')
+
+    return response['hits']['hits']
+
+
+def get_query_payload(node_id: str, position: str, search_after: list | None):
+    payload = {
+        "size": 10000,
+        "query": {
+            "term": {
+                f'{position}.keyword': node_id,
+            }
+        },
+        "sort": [{"id": "asc"}]
+    }
+
+    if search_after is not None:
+        payload["search_after"] = search_after
+
+    return payload
+
+
+def process_hits(node_id: str, position: str, hits: list | None, results: list):
+    # initial query
+    if hits is None:
+        return get_query_payload(node_id, position, None)
+
+    num_of_hits = len(hits)
+
+    # update results if needed
+    if num_of_hits > 0:
+        sources = [hit["_source"] for hit in hits]
+        results.extend(sources)
+
+    # decide if this is last page
+    if num_of_hits < 10000:
+        return None
+
+
+    # return body for next query based on pagination
+    search_after = hits[-1]["sort"]
+    return get_query_payload(node_id, position, search_after)
+
+
+def clean_print(text: str):
+    sys.stdout.write('\033[2K\r')  # Clear line and move cursor to beginning
+    sys.stdout.flush()
+    print(text, flush=True)
+
+
 async def get_edges(es_client: AsyncElasticsearch, node_id: str):
-    queries = [
-        ("subject.keyword", node_id),
-        ("object.keyword", node_id),
+    out_edges = []
+    in_edges = []
+
+
+    query_targets = [
+        {
+            "position": 'subject',
+            "results": out_edges,
+            "hits": None,
+        },
+        {
+            "position": 'object',
+            "results": in_edges,
+            "hits": None,
+        }
     ]
 
-    query_body = []
+    while True:
+        query_body = []
 
-    for field, value in queries:
-        query_body.append({})
-        query_body.append({
-            "size": 10000,
-            "query": {
-                "term": {
-                    field: value
-                }
-            }
-        })
+        next_query_targets = []
 
-    responses = await es_client.msearch(index=EDGE_INDEX, body=query_body)
+        for target in query_targets:
+            next_query_body = process_hits(node_id, **target)
 
-    out_edges, num_out_edges = extract_sources(responses["responses"][0])
-    in_edges, num_in_edges = extract_sources(responses["responses"][1])
 
-    if num_out_edges > 10000:
-        print(f'{node_id} out edges out of limit: {num_out_edges}')
+            if next_query_body is not None:
+                # meta field
+                query_body.append({})
+                # actual query
+                query_body.append(next_query_body)
+                next_query_targets.append(target)
 
-    if num_in_edges > 10000:
-        print(f'{node_id} in edges out of limit: {num_in_edges}')
 
+        if not query_body:
+            break
+
+        responses = await es_client.msearch(index=EDGE_INDEX, body=query_body)
+
+        for index, target in enumerate(next_query_targets):
+            response = responses["responses"][index]
+            target['hits'] = extract_hits_from_response(response)
+
+
+        query_targets = next_query_targets
+
+    # clean_print(f'{node_id} in: {len(in_edges)} out: {len(out_edges)}')
     return out_edges, in_edges
-
 
 async def process_single_node(es_client: AsyncElasticsearch, node_id: str):
     try:
         out_edges, in_edges = await get_edges(es_client, node_id)
+
     except Exception as e:
+        print(e)
         return None, 0
 
     total_edges = len(in_edges) + len(out_edges)
