@@ -171,7 +171,13 @@ async def per_worker(es_url:str, *args):
     # test to consume the async generator
     # _ = [_ async for _ in actions_generated]
 
-    successful_count, errors = await helpers.async_bulk(async_es_client, actions_generated, raise_on_error=False)
+    successful_count, errors = await helpers.async_bulk(
+        async_es_client,
+        actions_generated,
+        raise_on_error=False,
+        max_chunk_bytes = 90 * 1024 * 1024
+    )
+
     if errors:
         for failure in errors:
             action = failure["update"]
