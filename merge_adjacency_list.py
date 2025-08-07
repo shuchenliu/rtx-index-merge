@@ -65,7 +65,7 @@ def main():
     monitor_proc = multiprocessing.Process(target=monitor_progress, args=(progress_array, total_nodes, run_id))
     monitor_proc.start()
 
-    with multiprocessing.Manager() as manager, timeit(f'process {total_nodes} nodes'):
+    with multiprocessing.Manager() as manager, timeit(f'{run_id} process {total_nodes} nodes'):
         # create container for failed nodes
         failed_nodes = manager.list()
 
