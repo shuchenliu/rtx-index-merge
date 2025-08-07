@@ -142,16 +142,21 @@ async def generate_actions(es_client: AsyncElasticsearch, concurrency_limit: int
         async with semaphore:
             payload, total_edges = await process_single_node(es_client, _node_id)
             progress_array[worker_id] += 1
-            return payload, _node_id
+            return payload, _node_id, total_edges
 
     tasks_generator = (process_with_semaphore(node_id) for node_id in nodes_ids)
 
     for coro in asyncio.as_completed(tasks_generator):
-        payload, node_id = await coro
+        payload, node_id, total_edges = await coro
         if payload is not None:
+
+            payload_bytes = json.dumps(payload).encode('utf-8')
+            payload_size_mb = len(payload_bytes) / (1024 * 1024)
+            if payload_size_mb > 90:
+                clean_print(node_id, f'{total_edges} edges' ,f'{payload_size_mb:.2f} MB')
             yield payload
         else:
-            print(f'something wrong with {node_id}')
+            clean_print(f'something wrong with {node_id}')
             failed_nodes.append(node_id)
 
 
@@ -169,29 +174,29 @@ async def per_worker(es_url:str, *args):
     actions_generated = generate_actions(async_es_client, *args)
 
     # test to consume the async generator
-    # _ = [_ async for _ in actions_generated]
+    _ = [_ async for _ in actions_generated]
 
-    successful_count, errors = await helpers.async_bulk(
-        async_es_client,
-        actions_generated,
-        raise_on_error=False,
-        max_chunk_bytes = 90 * 1024 * 1024
-    )
-
-    if errors:
-        for failure in errors:
-            action = failure["update"]
-            error = action.get("error", {})
-            doc_id = action.get("_id", "<unknown>")
-
-            clean_print(f"❌ Failed document ID: {doc_id}")
-            clean_print(f"   Reason: {error.get('type')} - {error.get('reason')}")
-
-            clean_print("  ")
-
-            # append to failed nodes
-            args[-2].append(doc_id)
-
+    # successful_count, errors = await helpers.async_bulk(
+    #     async_es_client,
+    #     actions_generated,
+    #     raise_on_error=False,
+    #     max_chunk_bytes = 90 * 1024 * 1024
+    # )
+    #
+    # if errors:
+    #     for failure in errors:
+    #         action = failure["update"]
+    #         error = action.get("error", {})
+    #         doc_id = action.get("_id", "<unknown>")
+    #
+    #         clean_print(f"❌ Failed document ID: {doc_id}")
+    #         clean_print(f"   Reason: {error.get('type')} - {error.get('reason')}")
+    #
+    #         clean_print("  ")
+    #
+    #         # append to failed nodes
+    #         args[-2].append(doc_id)
+    #
 
     await async_es_client.close()
 
