@@ -10,6 +10,7 @@ from time import sleep
 
 from elastic_transport import ObjectApiResponse
 from elasticsearch import Elasticsearch, helpers, AsyncElasticsearch
+from elasticsearch.helpers import BulkIndexError
 
 from utils.benchmark import timeit
 from utils.env import check_is_prod, get_es_url
@@ -161,8 +162,31 @@ def run_per_worker(*args):
 # entry point for paral. work
 async def per_worker(es_url:str, *args):
     async_es_client = AsyncElasticsearch(es_url, request_timeout=300)
+
+    # settings = await async_es_client.indices.get_settings(index="rtx_kg2_nodes_adjacency_list")
+    # clean_print("nested objects limit", settings["rtx_kg2_nodes_adjacency_list"]["settings"]["index"]["mapping"]['nested_objects']['limit'])
+
     actions_generated = generate_actions(async_es_client, *args)
-    await helpers.async_bulk(async_es_client, actions_generated)
+
+    # test to consume the async generator
+    # _ = [_ async for _ in actions_generated]
+
+    successful_count, errors = await helpers.async_bulk(async_es_client, actions_generated, raise_on_error=False)
+    if errors:
+        for failure in errors:
+            action = failure["update"]
+            error = action.get("error", {})
+            doc_id = action.get("_id", "<unknown>")
+
+            clean_print(f"❌ Failed document ID: {doc_id}")
+            clean_print(f"   Reason: {error.get('type')} - {error.get('reason')}")
+
+            clean_print("  ")
+
+            # append to failed nodes
+            args[-2].append(doc_id)
+
+
     await async_es_client.close()
 
 
@@ -226,10 +250,10 @@ def process_hits(node_id: str, position: str, hits: list | None, results: list):
     return get_query_payload(node_id, position, search_after)
 
 
-def clean_print(text: str):
+def clean_print(*args, **kwargs):
     sys.stdout.write('\033[2K\r')  # Clear line and move cursor to beginning
     sys.stdout.flush()
-    print(text, flush=True)
+    print(*args, **kwargs, flush=True)
 
 
 async def get_edges(es_client: AsyncElasticsearch, node_id: str):
@@ -280,6 +304,12 @@ async def get_edges(es_client: AsyncElasticsearch, node_id: str):
         query_targets = next_query_targets
 
     # clean_print(f'{node_id} in: {len(in_edges)} out: {len(out_edges)}')
+
+    # total_edges_count = len(out_edges) + len(in_edges)
+    #
+    # if total_edges_count > 50000:
+    #     clean_print(f'{node_id} has {total_edges_count} edges')
+
     return out_edges, in_edges
 
 async def process_single_node(es_client: AsyncElasticsearch, node_id: str):
